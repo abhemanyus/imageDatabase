@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"os"
 	"testing"
+
+	sqlite "github.com/mattn/go-sqlite3"
 )
 
 func TestCreateDB(t *testing.T) {
@@ -20,11 +22,28 @@ func TestTags(t *testing.T) {
 	defer closeDB()
 	t.Run("create tag", func(t *testing.T) {
 		err := testDB.CreateTag("sfw", "safe for work")
-		ErrHandler(t, err, false)
+		ErrHandler(t, err, 0)
 	})
 	t.Run("fail to create duplicate tag", func(t *testing.T) {
 		err := testDB.CreateTag("sfw", "safe for work")
-		ErrHandler(t, err, true)
+		ErrHandler(t, err, sqlite.ErrConstraintPrimaryKey)
+	})
+}
+
+func TestImages(t *testing.T) {
+	testDB, closeDB := OpenDB(t)
+	defer closeDB()
+	t.Run("create image", func(t *testing.T) {
+		err := testDB.Add("123456", "temp/sfw.png", 200)
+		ErrHandler(t, err, 0)
+	})
+	t.Run("fail to create duplicate dhash", func(t *testing.T) {
+		err := testDB.Add("123456", "temp/nsfw.png", 220)
+		ErrHandler(t, err, sqlite.ErrConstraintPrimaryKey)
+	})
+	t.Run("fail to create same path", func(t *testing.T) {
+		err := testDB.Add("1234567", "temp/sfw.png", 200)
+		ErrHandler(t, err, sqlite.ErrConstraintUnique)
 	})
 }
 
@@ -44,19 +63,20 @@ func OpenDB(t testing.TB) (main.Store, func()) {
 	return testDB, CloseDB
 }
 
-func ErrHandler(t testing.TB, got error, want bool) {
+func ErrHandler(t testing.TB, got error, want sqlite.ErrNoExtended) {
 	t.Helper()
-	if want {
-		if got == nil {
-			t.Fatal("want error, got nil")
+	if want == 0 {
+		if got != nil {
+			t.Fatalf("got error %v", got)
 		} else {
-			t.Logf("want error, got %v", got)
+			return
 		}
-	} else {
-		if got == nil {
-			t.Log("no errors")
-		} else {
-			t.Logf("got error %v", got)
-		}
+	}
+	sqlErr, ok := got.(sqlite.Error)
+	if !ok {
+		t.Fatalf("can't convert to sql error %v", got)
+	}
+	if sqlErr.ExtendedCode != want {
+		t.Fatalf("want error code %d, got %d", want, sqlErr.ExtendedCode)
 	}
 }
