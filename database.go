@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -42,7 +41,7 @@ type Store interface {
 	AddTag(dhash, label string) error
 	CreateTag(label, description string) error
 	RemoveTag(label string) error
-	FindByTags(labels []string, offset, limit int64) ([]Image, error)
+	FindByTags(label string, offset, limit int64) ([]Image, error)
 	FindUrl(url string) (string, error)
 }
 
@@ -164,7 +163,7 @@ func CreateDB(db *sql.DB) (Store, error) {
 		return nil, err
 	}
 	database.rawQuery.getUrls = query
-	query, err = db.Prepare("SELECT images.dhash, path, size, createdAt FROM imageTags INNER JOIN images ON imageTags.dhash = images.dhash WHERE label IN (?) LIMIT = ? OFFSET = ?;")
+	query, err = db.Prepare("SELECT images.dhash, path, size, createdAt FROM imageTags INNER JOIN images ON imageTags.dhash = images.dhash WHERE label = ? LIMIT ? OFFSET ?;")
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +217,8 @@ func (db *Database) RemoveTag(label string) error {
 	return err
 }
 
-func (db *Database) FindByTags(labels []string, offset, limit int64) ([]Image, error) {
-	rows, err := db.rawQuery.findByTags.Query(strings.Join(labels, ","), limit, offset)
+func (db *Database) FindByTags(label string, offset, limit int64) ([]Image, error) {
+	rows, err := db.rawQuery.findByTags.Query(label, limit, offset)
 	if err != nil {
 		return nil, err
 	}

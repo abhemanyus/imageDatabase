@@ -31,7 +31,7 @@ func TestImageTags(t *testing.T) {
 		ErrHandler(t, err, sqlite.ErrConstraintPrimaryKey)
 	})
 	t.Run("get image by tag", func(t *testing.T) {
-		images, err := testDB.FindByTags([]string{"sfw"}, 0, 10)
+		images, err := testDB.FindByTags("sfw", 0, 10)
 		ErrHandler(t, err, 0)
 		if len(images) != 1 {
 			t.Fatalf("want length 1, got %v", len(images))
@@ -42,16 +42,18 @@ func TestImageTags(t *testing.T) {
 	})
 	ErrHandler(t, testDB.CreateTag("nsfw", "NOT safe for work"), 0)
 	ErrHandler(t, testDB.AddTag("123456", "nsfw"), 0)
-	// t.Run("get image by tags", func(t *testing.T) {
-	// 	images, err := testDB.FindByTags([]string{"sfw", "nsfw"}, 0, 10)
-	// 	if len(images) != 1 {
-	// 		t.Fatalf("want length 1, got %v", len(images))
-	// 	}
-	// 	if images[0].Dhash != "123456" {
-	// 		t.Fatalf("want dhash %q, got %q", "123456", images[0].Dhash)
-	// 	}
-	// 	ErrHandler(t, err, 0)
-	// })
+	ErrHandler(t, testDB.Add("1234567", "temp/img.jpg", 80), 0)
+	ErrHandler(t, testDB.AddTag("1234567", "nsfw"), 0)
+	t.Run("get image by tag", func(t *testing.T) {
+		images, err := testDB.FindByTags("nsfw", 0, 10)
+		ErrHandler(t, err, 0)
+		if len(images) != 2 {
+			t.Fatalf("want length 2, got %v", len(images))
+		}
+		if images[0].Dhash != "123456" {
+			t.Fatalf("want dhash %q, got %q", "123456", images[0].Dhash)
+		}
+	})
 }
 
 func TestUrls(t *testing.T) {
