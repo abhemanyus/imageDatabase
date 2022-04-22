@@ -2,16 +2,17 @@ package main
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Image struct {
-	dhash     string
-	path      string
-	size      int64
-	createdAt time.Time
+	Dhash     string
+	Path      string
+	Size      int64
+	CreatedAt time.Time
 }
 
 type Database struct {
@@ -27,7 +28,8 @@ type Database struct {
 		getUrls,
 		getTags,
 		findUrl,
-		findByTags *sql.Stmt
+		findByTags,
+		removeTag *sql.Stmt
 	}
 }
 
@@ -38,14 +40,19 @@ type Store interface {
 	Find(dhash string) (*Image, error)
 	AddUrl(dhash, url string) error
 	AddTag(dhash, label string) error
-	CreateTag(dhash, description string) error
-	FindByTags(labels []string, offset, limit int64) (*[]Image, error)
+	CreateTag(label, description string) error
+	RemoveTag(label string) error
+	FindByTags(labels []string, offset, limit int64) ([]Image, error)
 	FindUrl(url string) (string, error)
 }
 
 func CreateDB(db *sql.DB) (Store, error) {
 	database := &Database{}
-	_, err := db.Exec(`
+	_, err := db.Exec(`PRAGMA foreign_keys = ON;`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS images (
 		dhash TEXT NOT NULL PRIMARY KEY,
 		path TEXT NOT NULL UNIQUE,
@@ -142,7 +149,12 @@ func CreateDB(db *sql.DB) (Store, error) {
 		return nil, err
 	}
 	database.rawQuery.createTag = query
-	query, err = db.Prepare("SELECT dhash, label FROM imageTags WHERE dhash = ?;")
+	query, err = db.Prepare("DELETE FROM tags WHERE label = ?;")
+	if err != nil {
+		return nil, err
+	}
+	database.rawQuery.removeTag = query
+	query, err = db.Prepare("SELECT label FROM imageTags WHERE dhash = ?;")
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +164,7 @@ func CreateDB(db *sql.DB) (Store, error) {
 		return nil, err
 	}
 	database.rawQuery.getUrls = query
-	query, err = db.Prepare("SELECT images.dhash, path, size, createdAt FROM imageTags INNER JOIN images ON imageTags.dhash = images.dhash WHERE label IN (?) LIMIT ? OFFSET ?;")
+	query, err = db.Prepare("SELECT images.dhash, path, size, createdAt FROM imageTags INNER JOIN images ON imageTags.dhash = images.dhash WHERE label IN (?) LIMIT = ? OFFSET = ?;")
 	if err != nil {
 		return nil, err
 	}
@@ -176,18 +188,18 @@ func (db *Database) Add(dhash, path string, size uint) error {
 }
 
 func (db *Database) Remove(dhash string) error {
-	_, err := db.rawQuery.insertImage.Exec(dhash)
+	_, err := db.rawQuery.deleteImage.Exec(dhash)
 	return err
 }
 
 func (db *Database) Find(dhash string) (*Image, error) {
-	var image Image
-	err := db.rawQuery.insertImage.QueryRow(dhash).Scan(&image.dhash, &image.path, &image.size, &image.createdAt)
-	return &image, err
+	image := &Image{}
+	err := db.rawQuery.findImage.QueryRow(dhash).Scan(&image.Dhash, &image.Path, &image.Size, &image.CreatedAt)
+	return image, err
 }
 
 func (db *Database) AddUrl(dhash, url string) error {
-	_, err := db.rawQuery.addUrl.Exec(dhash)
+	_, err := db.rawQuery.addUrl.Exec(url, dhash)
 	return err
 }
 
@@ -201,20 +213,25 @@ func (db *Database) CreateTag(label, description string) error {
 	return err
 }
 
-func (db *Database) FindByTags(labels []string, offset, limit int64) (*[]Image, error) {
-	rows, err := db.rawQuery.findByTags.Query(labels, limit, offset)
-	var images []Image
+func (db *Database) RemoveTag(label string) error {
+	_, err := db.rawQuery.removeTag.Exec(label)
+	return err
+}
+
+func (db *Database) FindByTags(labels []string, offset, limit int64) ([]Image, error) {
+	rows, err := db.rawQuery.findByTags.Query(strings.Join(labels, ","), limit, offset)
 	if err != nil {
-		return &images, err
+		return nil, err
 	}
+	var images []Image
 	for rows.Next() {
 		var image Image
-		err := rows.Scan(&image.dhash, &image.path, &image.size, &image.createdAt)
+		err := rows.Scan(&image.Dhash, &image.Path, &image.Size, &image.CreatedAt)
 		if err == nil {
 			images = append(images, image)
 		}
 	}
-	return &images, nil
+	return images, rows.Err()
 }
 
 func (db *Database) FindUrl(url string) (string, error) {
