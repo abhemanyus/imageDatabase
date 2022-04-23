@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"io/fs"
 	"log"
@@ -14,8 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devedge/imagehash"
+	"github.com/corona10/goimagehash"
 	"github.com/mattn/go-sqlite3"
+	_ "golang.org/x/image/webp"
 )
 
 type Server struct {
@@ -45,6 +46,7 @@ func (srv *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	file := r.Body
 	defer file.Close()
 	imgExt := strings.Split(strings.ToLower(header), "/")
+	log.Println(imgExt)
 	if imgExt[0] != "image" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -64,7 +66,7 @@ func (srv *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var image struct {
-		Hash string
+		Hash int64
 		Size int64
 	}
 	image.Hash = hashString
@@ -91,7 +93,7 @@ func (srv *Server) handleUrl(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println(myUrl)
 	dhash, _ := srv.DB.FindUrl(myUrl)
-	if len(dhash) > 0 {
+	if dhash == 0 {
 		w.WriteHeader(http.StatusAlreadyReported)
 		fmt.Fprint(w, "url already exists")
 		return
@@ -125,7 +127,7 @@ func (srv *Server) handleUrl(w http.ResponseWriter, r *http.Request) {
 		myUrl = myUrls[0]
 		log.Println(myUrl)
 		dhash, _ = srv.DB.FindUrl(myUrl)
-		if len(dhash) > 0 {
+		if dhash == 0 {
 			w.WriteHeader(http.StatusAlreadyReported)
 			fmt.Fprint(w, "url already exists")
 			return
@@ -165,7 +167,7 @@ func (srv *Server) handleUrl(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var image struct {
-			Hash string
+			Hash int64
 			Size int64
 		}
 		hashString, err := srv.addToDB(dest, tag, size)
@@ -201,18 +203,19 @@ func (srv *Server) saveFile(src io.ReadCloser, ext string) (string, int64, error
 	return destPath, size, err
 }
 
-func (srv *Server) addToDB(filePath, tag string, size int64) (string, error) {
-	src, err := imagehash.OpenImg(filePath)
+func (srv *Server) addToDB(filePath, tag string, size int64) (int64, error) {
+	file, _ := os.Open(filePath)
+	image, _, err := image.Decode(file)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	// set sensitivity of hashing algorithm
-	dhash, err := imagehash.Dhash(src, 8)
+	dhash, err := goimagehash.DifferenceHash(image)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	hashString := hex.EncodeToString(dhash)
-	err = srv.DB.Add(hashString, filePath, size)
+	hashInt := int64(dhash.GetHash())
+	err = srv.DB.Add(hashInt, filePath, size)
 	if err != nil {
 		log.Println(err)
 		// convert to sqlite error
@@ -221,13 +224,13 @@ func (srv *Server) addToDB(filePath, tag string, size int64) (string, error) {
 			// hash match cause primary key error
 			if sqlErr.ExtendedCode == sqlite3.ErrConstraintPrimaryKey {
 				// get old image record
-				image, _ := srv.DB.Find(hashString)
+				image, _ := srv.DB.Find(hashInt)
 				// if new image > old image
 				if size > image.Size {
 					// remove old image
 					os.Remove(image.Path)
 					// add new image
-					srv.DB.Add(hashString, filePath, size)
+					srv.DB.Add(hashInt, filePath, size)
 				} else {
 					os.Remove(filePath)
 				}
@@ -235,6 +238,6 @@ func (srv *Server) addToDB(filePath, tag string, size int64) (string, error) {
 		}
 	}
 	// add tag
-	err = srv.DB.AddTag(hashString, tag)
-	return hashString, err
+	err = srv.DB.AddTag(hashInt, tag)
+	return hashInt, err
 }

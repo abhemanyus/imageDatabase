@@ -8,7 +8,7 @@ import (
 )
 
 type Image struct {
-	Dhash     string
+	Dhash     int64
 	Path      string
 	Size      int64
 	CreatedAt time.Time
@@ -34,15 +34,15 @@ type Database struct {
 
 type Store interface {
 	DeleteAll() error
-	Add(dhash, path string, size int64) error
-	Remove(dhash string) error
-	Find(dhash string) (*Image, error)
-	AddUrl(dhash, url string) error
-	AddTag(dhash, label string) error
+	Add(dhash int64, path string, size int64) error
+	Remove(dhash int64) error
+	Find(dhash int64) (*Image, error)
+	AddUrl(dhash int64, url string) error
+	AddTag(dhash int64, label string) error
 	CreateTag(label, description string) error
 	RemoveTag(label string) error
 	FindByTags(label string, offset, limit int64) ([]Image, error)
-	FindUrl(url string) (string, error)
+	FindUrl(url string) (int64, error)
 }
 
 func CreateDB(db *sql.DB) (Store, error) {
@@ -53,7 +53,7 @@ func CreateDB(db *sql.DB) (Store, error) {
 	}
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS images (
-		dhash TEXT NOT NULL PRIMARY KEY,
+		dhash INTEGER NOT NULL PRIMARY KEY,
 		path TEXT NOT NULL UNIQUE,
 		size INTEGER NOT NULL DEFAULT 0,
 		createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -72,7 +72,7 @@ func CreateDB(db *sql.DB) (Store, error) {
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS imageUrls (
 		url TEXT NOT NULL PRIMARY KEY,
-		dhash TEXT NOT NULL,
+		dhash INTEGER NOT NULL,
 		FOREIGN KEY (dhash) REFERENCES images (dhash) ON DELETE CASCADE
 	);`)
 	if err != nil {
@@ -86,7 +86,7 @@ func CreateDB(db *sql.DB) (Store, error) {
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS imageTags (
 		label TEXT NOT NULL,
-		dhash TEXT NOT NULL,
+		dhash INTEGER NOT NULL,
 		PRIMARY KEY (label, dhash),
 		FOREIGN KEY (label) REFERENCES tags (label) ON DELETE CASCADE,
 		FOREIGN KEY (dhash) REFERENCES images (dhash) ON DELETE CASCADE
@@ -105,13 +105,6 @@ func CreateDB(db *sql.DB) (Store, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	db.Exec(`
-	INSERT INTO tags (label, description) VALUES 
-		("sfw", "safe for work"),
-		("nsfw", "NOT safe for work"),
-		("fuzzy", "maybe or maybe not");
-	`)
 
 	query, err := db.Prepare(`
 		DROP TABLE images;
@@ -188,28 +181,28 @@ func (db *Database) DeleteAll() error {
 	return err
 }
 
-func (db *Database) Add(dhash, path string, size int64) error {
+func (db *Database) Add(dhash int64, path string, size int64) error {
 	_, err := db.rawQuery.insertImage.Exec(dhash, path, size)
 	return err
 }
 
-func (db *Database) Remove(dhash string) error {
+func (db *Database) Remove(dhash int64) error {
 	_, err := db.rawQuery.deleteImage.Exec(dhash)
 	return err
 }
 
-func (db *Database) Find(dhash string) (*Image, error) {
+func (db *Database) Find(dhash int64) (*Image, error) {
 	image := &Image{}
 	err := db.rawQuery.findImage.QueryRow(dhash).Scan(&image.Dhash, &image.Path, &image.Size, &image.CreatedAt)
 	return image, err
 }
 
-func (db *Database) AddUrl(dhash, url string) error {
+func (db *Database) AddUrl(dhash int64, url string) error {
 	_, err := db.rawQuery.addUrl.Exec(url, dhash)
 	return err
 }
 
-func (db *Database) AddTag(dhash, label string) error {
+func (db *Database) AddTag(dhash int64, label string) error {
 	_, err := db.rawQuery.addTag.Exec(label, dhash)
 	return err
 }
@@ -240,8 +233,8 @@ func (db *Database) FindByTags(label string, offset, limit int64) ([]Image, erro
 	return images, rows.Err()
 }
 
-func (db *Database) FindUrl(url string) (string, error) {
-	var dhash string
+func (db *Database) FindUrl(url string) (int64, error) {
+	var dhash int64
 	err := db.rawQuery.findUrl.QueryRow(url).Scan(&dhash)
 	return dhash, err
 }
