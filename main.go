@@ -4,17 +4,22 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	log.SetFlags(log.Lshortfile)
-	db, err := sql.Open("sqlite3", "test.db")
+	err := godotenv.Load(".env")
+	fatalErr(err)
+	db, err := sql.Open("sqlite3", os.Getenv("DATABASE"))
 	fatalErr(err)
 	database, err := CreateDB(db)
 	fatalErr(err)
-	server, err := CreateServer(database, "root")
+	server, err := CreateServer(database, os.Getenv("ROOT"))
 	fatalErr(err)
-	http.ListenAndServe(":8080", server)
+	http.ListenAndServe(os.Getenv("ADDR"), server)
 }
 
 func fatalErr(err error) {
