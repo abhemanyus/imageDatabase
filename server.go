@@ -41,15 +41,10 @@ func CreateServer(db Store, root string) (*Server, error) {
 
 func (srv *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	tag := r.URL.Query().Get("tag")
-	file, header, err := r.FormFile("image")
+	header := r.Header.Get("content-type")
+	file := r.Body
 	defer file.Close()
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, err)
-		return
-	}
-	imgExt := strings.Split(strings.ToLower(header.Header.Get("content-type")), "/")
+	imgExt := strings.Split(strings.ToLower(header), "/")
 	if imgExt[0] != "image" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
