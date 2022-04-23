@@ -34,7 +34,7 @@ type Database struct {
 
 type Store interface {
 	DeleteAll() error
-	Add(dhash, path string, size uint) error
+	Add(dhash, path string, size int64) error
 	Remove(dhash string) error
 	Find(dhash string) (*Image, error)
 	AddUrl(dhash, url string) error
@@ -105,6 +105,13 @@ func CreateDB(db *sql.DB) (Store, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	db.Exec(`
+	INSERT INTO tags (label, description) VALUES 
+		("sfw", "safe for work"),
+		("nsfw", "NOT safe for work"),
+		("fuzzy", "maybe or maybe not");
+	`)
 
 	query, err := db.Prepare(`
 		DROP TABLE images;
@@ -181,7 +188,7 @@ func (db *Database) DeleteAll() error {
 	return err
 }
 
-func (db *Database) Add(dhash, path string, size uint) error {
+func (db *Database) Add(dhash, path string, size int64) error {
 	_, err := db.rawQuery.insertImage.Exec(dhash, path, size)
 	return err
 }
